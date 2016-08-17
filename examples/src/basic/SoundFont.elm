@@ -6,33 +6,26 @@ import Html.Events exposing (on, onClick)
 import Html.App as Html
 import String
 import Task
-import SoundFontPorts exposing (..)
-import SoundFontTypes exposing (..)
+import SoundFont.Ports exposing (..)
+import SoundFont.Types exposing (..)
+import SoundFont.Msg exposing (..)
+import SoundFont.Subscriptions exposing (..)
 
 main =
   Html.program
     { init = (init, Cmd.none), update = update, view = view, subscriptions = subscriptions }
-
-type Msg =
-    InitialiseAudioContext
-  | ResponseAudioContext AudioContext
-  | RequestOggEnabled
-  | ResponseOggEnabled Bool
-  | RequestLoadFonts
-  | ResponseFontsLoaded Bool
-  | RequestPlayNote MidiNote
-  | NoOp
-
 
 type alias Model =
   {
     audioContext : Maybe AudioContext
   , oggEnabled : Bool
   , fontsLoaded : Bool
+  , playedNote : Bool
+  , canPlaySequence : Bool
   }
 
 init =
-  Model Nothing False False
+  Model Nothing False False False False
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
@@ -53,9 +46,9 @@ update msg model =
       ( { model | oggEnabled = enabled }
       , Cmd.none
       )
-    RequestLoadFonts ->
+    RequestLoadFonts dir ->
       ( model
-      , requestLoadFonts ()
+      , requestLoadFonts dir
       )
     ResponseFontsLoaded loaded ->
       ( { model | fontsLoaded = loaded }
@@ -65,30 +58,31 @@ update msg model =
       ( model
       , requestPlayNote note
       )
+    ResponsePlayedNote played ->
+      ( { model | playedNote = played }
+      , Cmd.none
+      )
+    RequestPlayNoteSequence notes ->
+      ( model
+      , requestPlayNoteSequence notes
+      )
+    ResponsePlaySequenceStarted playing ->
+      ( { model | canPlaySequence = playing }
+      , Cmd.none
+      )
     NoOp ->
       ( model, Cmd.none )
 
 
-
-
 -- SUBSCRIPTIONS
-
-audioContextSub : Sub Msg
-audioContextSub =
-  getAudioContext ResponseAudioContext
-
-oggEnabledSub : Sub Msg
-oggEnabledSub  =
-  oggEnabled ResponseOggEnabled
-
-fontsLoadedSub : Sub Msg
-fontsLoadedSub  =
-  fontsLoaded ResponseFontsLoaded
-
 subscriptions : Model -> Sub Msg
 subscriptions model
-  = Sub.batch [audioContextSub, oggEnabledSub, fontsLoadedSub]
-
+  = Sub.batch [ audioContextSub
+              , oggEnabledSub
+              , fontsLoadedSub
+              , playedNoteSub
+              , playSequenceStartedSub
+              ]
 
 -- VIEW
 
@@ -109,8 +103,20 @@ viewEnabled m =
         "yes"
       else
         "no"
+    played = 
+      if (m.playedNote) then
+        "yes"
+      else
+        "no"
+    canPlay = 
+      if (m.canPlaySequence) then
+        "yes"
+      else
+        "no"
   in
-     text ("audio enabled: " ++ audio ++ " ogg enabled: " ++ ogg ++ " fonts loaded: " ++ fonts  )
+     text ("audio enabled: " ++ audio ++ " ogg enabled: " ++ 
+            ogg ++ " fonts loaded: " ++ fonts ++ " played note: " ++ 
+            played ++ " can play sequence: " ++ canPlay )
 
 
 view : Model -> Html Msg
@@ -130,6 +136,7 @@ view model =
         ] [ text "check ogg enabled" ]
     , viewLoadFontButton model
     , viewPlayNoteButton model
+    , viewPlayNoteSequenceButton model
     ,  div [] [ viewEnabled model ]
     ]
 
@@ -139,7 +146,7 @@ viewLoadFontButton model =
     Just ac ->
       button
         [
-          onClick RequestLoadFonts
+          onClick (RequestLoadFonts "soundfonts")
         , id "elm-load-font-button"
         , btnStyle
         ] [ text "load soundfonts" ]
@@ -158,7 +165,29 @@ viewPlayNoteButton model =
   else
     div [] []
 
-
+viewPlayNoteSequenceButton: Model -> Html Msg
+viewPlayNoteSequenceButton model =
+  let
+    sequence =
+      [ (MidiNote 60 0.0 1.0)
+      , (MidiNote 62 0.3 1.0)
+      , (MidiNote 64 0.6 1.0)
+      , (MidiNote 65 0.9 1.0)
+      , (MidiNote 67 1.2 1.0)
+      , (MidiNote 69 1.5 1.0)
+      , (MidiNote 71 1.8 1.0)
+      , (MidiNote 72 2.1 1.0)
+      ]
+  in
+    if (model.fontsLoaded) then
+      button
+        [
+          onClick (RequestPlayNoteSequence sequence)
+        , id "elm-play-note-sequence-button"
+        , btnStyle
+        ] [ text "play sample scale" ]
+    else
+      div [] []
 
 btnStyle : Attribute msg
 btnStyle =

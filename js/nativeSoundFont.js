@@ -1,5 +1,3 @@
-var myapp = Elm.SoundFont.embed(node);
-
 myapp.ports.initialiseAudioContext.subscribe(detectAudioContext);
 
 function detectAudioContext() {
@@ -16,10 +14,17 @@ function detectOggEnabled() {
 
 myapp.ports.requestLoadFonts.subscribe(loadSoundFonts);
 
-function loadSoundFonts() {
+function loadSoundFonts(dirname) {
     myapp.context = getAudioContext();
-    name = 'acoustic_grand_piano'
-    Soundfont.nameToUrl = function (name) { return 'soundfonts/' + name + '-ogg.js' }
+    var name = 'acoustic_grand_piano'
+    var dir = dirname + '/'
+    if (canPlayOgg()) {
+      extension = '-ogg.js'
+    }
+    else {
+      extension = '-mp3.js'
+    }    
+    Soundfont.nameToUrl = function (name) { return dir + name + extension }
     Soundfont.loadBuffers(myapp.context, name)
         .then(function (buffers) {
           console.log("buffers:", buffers)
@@ -28,21 +33,28 @@ function loadSoundFonts() {
         })
 }
 
-myapp.ports.requestPlayNote.subscribe(playMidiNote);
+myapp.ports.requestPlayNote.subscribe(playNote);
 
 /* play a midi note */
-function playMidiNote(midiNote) {
-  console.log("playing buffer at time: " + midiNote.timeOffset + " with gain: " + midiNote.gain + " for note" + midiNote.id)
-  var buffer = myapp.buffers[midiNote.id]
-  var source = myapp.context.createBufferSource();
-  var gainNode = myapp.context.createGain();
-  var time = myapp.context.currentTime + midiNote.timeOffset;
-  gainNode.gain.value = midiNote.gain;
-  source.buffer = buffer;
-  source.connect(gainNode);
-  gainNode.connect(myapp.context.destination)
-  source.start(time);
-};
+function playNote(midiNote) {
+  var res = playMidiNote(midiNote); 
+  myapp.ports.playedNote.send(res);
+}
+
+
+myapp.ports.requestPlayNoteSequence.subscribe(playMidiNoteSequence);
+
+/* play a sequence of midi notes */
+function playMidiNoteSequence(midiNotes) {
+  /* console.log("play sequence"); */
+  if (myapp.buffers) { 
+    midiNotes.map(playMidiNote);
+    myapp.ports.playSequenceStarted.send(true);
+  }
+  else {
+    myapp.ports.playSequenceStarted.send(false);
+  }
+}
 
 /* IMPLEMENTATION */
 
@@ -55,11 +67,32 @@ getAudioContext = function() {
 canPlayOgg = function() {
   var audioTester = document.createElement("audio");
   if (audioTester.canPlayType('audio/ogg')) {
-    console.log("browser supports ogg");
+    /* console.log("browser supports ogg"); */
     return true;
   }
   else {
-    console.log("browser does not support ogg");
+    /* console.log("browser does not support ogg"); */
     return false;
   }
 }
+
+/* play a midi note */
+function playMidiNote(midiNote) {
+  if (myapp.buffers) { 
+    /* console.log("playing buffer at time: " + midiNote.timeOffset + " with gain: " + midiNote.gain + " for note: " + midiNote.id) */
+    var buffer = myapp.buffers[midiNote.id]
+    var source = myapp.context.createBufferSource();
+    var gainNode = myapp.context.createGain();
+    var time = myapp.context.currentTime + midiNote.timeOffset;
+    gainNode.gain.value = midiNote.gain;
+    source.buffer = buffer;
+    source.connect(gainNode);
+    gainNode.connect(myapp.context.destination)
+    source.start(time);
+    return true;
+  }
+  else {
+    return false;
+  }
+};
+
